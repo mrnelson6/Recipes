@@ -161,27 +161,13 @@
     }
 
     async function addRecipeMultipart(formEl){
-        const f = new FormData(formEl);
-        const fd = new FormData();
-        fd.append('action','add');
-        fd.append('title', f.get('title')||'');
-        fd.append('type', f.get('type')||'');
-        fd.append('description', f.get('description')||'');
-        fd.append('time', f.get('time')||'');
-        fd.append('ingredients', (f.get('ingredients')||'').toString());
-        fd.append('instructions', (f.get('instructions')||'').toString());
-        fd.append('pictures', (f.get('pictures')||'').toString());
-        const files = formEl.querySelector('#photos')?.files || [];
-        for (const file of files) fd.append('photos', file, file.name);
+        const fd = new FormData(formEl);     // includes all fields (and files)
+        fd.append('action', 'add');          // required for server switch
 
         const resp = await fetch(APP_URL, { method:'POST', body: fd });
-        const text = await resp.text(); // read as text first
-        try {
-            return JSON.parse(text);
-        } catch {
-            console.error('Server returned non-JSON:', text);
-            throw new Error('Non-JSON response from server (see console)');
-        }
+        const text = await resp.text();
+        try { return JSON.parse(text); }
+        catch { console.error('Server returned non-JSON:', text); throw new Error('Non-JSON response'); }
     }
 
     // Like
