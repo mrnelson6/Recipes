@@ -161,8 +161,8 @@
     }
 
     async function addRecipeMultipart(formEl){
-        const fd = new FormData();
         const f = new FormData(formEl);
+        const fd = new FormData();
         fd.append('action','add');
         fd.append('title', f.get('title')||'');
         fd.append('type', f.get('type')||'');
@@ -171,10 +171,17 @@
         fd.append('ingredients', (f.get('ingredients')||'').toString());
         fd.append('instructions', (f.get('instructions')||'').toString());
         fd.append('pictures', (f.get('pictures')||'').toString());
-        const files = formEl.querySelector('#photos').files;
-        for(const file of files){ fd.append('photos', file, file.name); }
-        const res = await fetch(APP_URL, { method:'POST', body: fd });
-        try { return await res.json(); } catch { return { ok:true }; }
+        const files = formEl.querySelector('#photos')?.files || [];
+        for (const file of files) fd.append('photos', file, file.name);
+
+        const resp = await fetch(APP_URL, { method:'POST', body: fd });
+        const text = await resp.text(); // read as text first
+        try {
+            return JSON.parse(text);
+        } catch {
+            console.error('Server returned non-JSON:', text);
+            throw new Error('Non-JSON response from server (see console)');
+        }
     }
 
     // Like
@@ -270,12 +277,26 @@
     document.getElementById('refreshBtn').onclick = loadAll;
 
     document.getElementById('addForm').onsubmit = async (e)=>{
-        e.preventDefault();
-        const msg = document.getElementById('formMsg');
-        msg.textContent = 'Uploading…';
-        const res = await addRecipeMultipart(e.target);
-        msg.textContent = res && res.ok? 'Saved!' : 'Something went wrong';
-        if(res && res.ok){ e.target.reset(); closeModal('addModal'); await loadAll(); }
+    e.preventDefault();
+    const msg = document.getElementById('formMsg');
+    msg.textContent = 'Uploading…';
+    try {
+        const fdRes = await addRecipeMultipart(e.target);
+        // If addRecipeMultipart already returns parsed JSON:
+        const ok = fdRes && fdRes.ok;
+        if (!ok) {
+        msg.textContent = 'Upload failed: ' + (fdRes && fdRes.error ? fdRes.error : 'unknown error');
+        console.error('Upload error (parsed JSON):', fdRes);
+        return;
+        }
+        msg.textContent = 'Saved!';
+        e.target.reset();
+        closeModal('addModal');
+        await loadAll();
+    } catch (err) {
+        msg.textContent = 'Network/parse error (see console)';
+        console.error('Upload error (exception):', err);
+    }
     };
 
     // Kick off
