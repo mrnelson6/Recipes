@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Recipe Hub</title>
+  <style>
+    :root{--bg:#0b1020;--card:#121a33;--ink:#e7ecff;--muted:#95a0c6;--accent:#7dd3fc;--focus:#fbbf24;--ok:#34d399;--danger:#ef4444}
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;background:linear-gradient(180deg,#0b1020,#0a0f24 60%);color:var(--ink);font:16px/1.45 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+
+    .wrap{max-width:1100px;margin:0 auto;padding:18px}
+    header{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px}
+    h1{margin:0;font-weight:800;letter-spacing:.2px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap}
+    input,select,textarea{padding:10px 12px;border-radius:10px;border:1px solid #2a3a6a;background:#0a1430;color:var(--ink);outline:none}
+    input::placeholder, textarea::placeholder{color:#7b87b6}
+    button{padding:10px 12px;border-radius:10px;border:1px solid #2a3a6a;background:#0e1a3d;color:var(--ink);cursor:pointer}
+    button:hover{filter:brightness(1.08)}
+    .ghost{background:transparent}
+    .primary{background:linear-gradient(90deg,var(--accent),#60a5fa);color:#071021;border:0}
+
+    .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+    @media (max-width:1000px){.grid{grid-template-columns:repeat(2,1fr)}}
+    @media (max-width:640px){.grid{grid-template-columns:1fr}}
+
+    .card{background:var(--card);border:1px solid #1d274a;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:14px;display:flex;flex-direction:column;gap:8px}
+    .badge{display:inline-flex;align-items:center;gap:6px;border:1px solid #2a3a6a;background:#0a1430;border-radius:999px;padding:4px 8px;font-size:.85rem;color:var(--muted)}
+
+    .row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .likes{display:inline-flex;align-items:center;gap:6px}
+
+    /* Modal */
+    .modal{position:fixed;inset:0;display:none;place-items:center;background:rgba(3,10,30,.65);z-index:40}
+    .sheet{background:#121a33;border:1px solid #1d274a;border-radius:16px;padding:18px;max-width:760px;width:92%;max-height:90vh;overflow:auto}
+    .sheet h2{margin-top:0}
+
+    .pill{height:6px;background:#0a1430;border:1px solid #23325e;border-radius:999px;overflow:hidden;margin:8px 0}
+    .bar{height:100%;width:0;background:linear-gradient(90deg,var(--accent),#60a5fa);transition:width .2s}
+
+    .muted{color:var(--muted)}
+    .thumbs img{width:100%;height:160px;object-fit:cover;border-radius:10px;border:1px solid #23325e}
+    .thumbs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+    @media (max-width:700px){.thumbs{grid-template-columns:repeat(2,1fr)}}
+
+    .detail img{width:100%;max-height:360px;object-fit:cover;border-radius:12px;border:1px solid #23325e}
+    .k{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+    .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>🍳 Recipe Hub</h1>
+        <div class="muted">Add new recipes or browse, search, filter by type, and like your favorites.</div>
+      </div>
+      <div class="controls">
+        <button id="addBtn" class="primary">＋ Add Recipe</button>
+      </div>
+    </header>
+
+    <div class="controls" style="margin-bottom:10px">
+      <input id="q" type="text" placeholder="Search by title or ingredient…" style="min-width:220px">
+      <select id="typeSel">
+        <option value="">All types</option>
+        <option>Breakfast</option>
+        <option>Appetizer</option>
+        <option>Poultry</option>
+        <option>Bake</option>
+        <option>Treat</option>
+        <option>Soup</option>
+        <option>Pasta</option>
+        <option>Seafood</option>
+        <option>Vegetarian</option>
+      </select>
+      <select id="sortSel">
+        <option value="likes">Sort: most liked</option>
+        <option value="new">Sort: newest</option>
+        <option value="az">Sort: A → Z</option>
+      </select>
+      <button id="refreshBtn" class="ghost">Refresh</button>
+    </div>
+
+    <div class="pill"><div class="bar" id="bar"></div></div>
+
+    <div id="list" class="grid"></div>
+  </div>
+
+  <!-- Add/Edit Modal -->
+  <div id="addModal" class="modal">
+    <div class="sheet">
+      <h2>Add a Recipe</h2>
+      <div class="muted" style="margin:-6px 0 10px">Images: paste one or more image URLs (comma‑separated). You can host on GitHub, Google Drive (share link), or any CDN.</div>
+        <form id="addForm" autocomplete="off">
+            <div class="controls" style="margin-bottom:8px">
+                <input name="title" required placeholder="Title" style="flex:2">
+                <select name="type" required style="flex:1">
+                    <option value="">Type…</option>
+                    <option>Breakfast</option>
+                    <option>Appetizer</option>
+                    <option>Poultry</option>
+                    <option>Bake</option>
+                    <option>Treat</option>
+                    <option>Soup</option>
+                    <option>Pasta</option>
+                    <option>Seafood</option>
+                    <option>Vegetarian</option>
+                </select>
+                <input name="time" placeholder="Time (e.g., 45 min)" style="flex:1">
+            </div>
+            <textarea name="description" rows="2" placeholder="Short description" style="width:100%;margin-bottom:8px"></textarea>
+            <div class="controls" style="margin-bottom:8px">
+                <textarea name="ingredients" rows="4" placeholder="Ingredients (one per line)" style="flex:1"></textarea>
+                <textarea name="instructions" rows="4" placeholder="Instructions (steps, one per line)" style="flex:1"></textarea>
+            </div>
+            <input type="file" name="photos" id="photos" accept="image/*" multiple style="width:100%;margin-bottom:8px" />
+            <input name="pictures" placeholder="Image URL(s), comma‑separated" style="width:100%;margin-bottom:10px">
+            <div class="row">
+                <div class="muted mono" id="formMsg"></div>
+                <div class="controls">
+                    <button type="button" id="cancelAdd">Cancel</button>
+                    <button type="submit" class="primary">Save</button>
+                </div>
+            </div>
+        </form>
+    </div>
+  </div>
+
+  <!-- Detail Modal -->
+  <div id="detailModal" class="modal">
+    <div class="sheet detail"></div>
+  </div>
+
+  <script>
+    // === Replace with your deployed Apps Script Web App URL (ends with /exec)
+    const APP_URL = 'https://script.google.com/macros/s/AKfycbzVsxiVnOmaO2zpm31IUT1k3TvEGhu3uAKWcPNodxwrOROTDZLOXRdW9F6DjLvMw0HG/exec';
+
+    // Light progress bar utility
+    const bar = document.getElementById('bar');
+    const setBusy = (on) => bar.style.width = on ? '100%' : '0%';
+
+    // Simple state
+    let RECIPES = [];
+
+    // Modal helpers
+    function openModal(id){ document.getElementById(id).style.display='grid'; }
+    function closeModal(id){ document.getElementById(id).style.display='none'; }
+
+    // Fetch all
+    async function loadAll(){
+      setBusy(true);
+      try{
+        const res = await fetch(APP_URL + '?action=list');
+        const data = await res.json();
+        RECIPES = (data.rows||[]);
+        renderList();
+      }catch(e){ console.error(e); }
+      setBusy(false);
+    }
+
+    async function addRecipeMultipart(formEl){
+        const fd = new FormData();
+        const f = new FormData(formEl);
+        fd.append('action','add');
+        fd.append('title', f.get('title')||'');
+        fd.append('type', f.get('type')||'');
+        fd.append('description', f.get('description')||'');
+        fd.append('time', f.get('time')||'');
+        fd.append('ingredients', (f.get('ingredients')||'').toString());
+        fd.append('instructions', (f.get('instructions')||'').toString());
+        fd.append('pictures', (f.get('pictures')||'').toString());
+        const files = formEl.querySelector('#photos').files;
+        for(const file of files){ fd.append('photos', file, file.name); }
+        const res = await fetch(APP_URL, { method:'POST', body: fd });
+        try { return await res.json(); } catch { return { ok:true }; }
+    }
+
+    // Like
+    async function likeRecipe(id){
+      const likedKey = 'liked_'+id;
+      if (localStorage.getItem(likedKey)) return; // very light client guard
+      const res = await fetch(APP_URL, { method:'POST', body: JSON.stringify({ action:'like', id }) });
+      try { const j = await res.json(); if(j.ok){ localStorage.setItem(likedKey,'1'); } return j; } catch { return { ok:true }; }
+    }
+
+    // Render list with filters/search/sort
+    function renderList(){
+      const q = document.getElementById('q').value.toLowerCase().trim();
+      const t = document.getElementById('typeSel').value;
+      const s = document.getElementById('sortSel').value;
+
+      let rows = RECIPES.slice();
+      if(t) rows = rows.filter(r => (r.type||'') === t);
+      if(q) rows = rows.filter(r => (r.title||'').toLowerCase().includes(q) || (r.ingredients||[]).join('\n').toLowerCase().includes(q));
+
+      if(s==='likes') rows.sort((a,b)=>(b.likes||0)-(a.likes||0));
+      if(s==='new')   rows.sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp));
+      if(s==='az')    rows.sort((a,b)=> (a.title||'').localeCompare(b.title||''));
+
+      const list = document.getElementById('list');
+      list.innerHTML = rows.map(r => cardHTML(r)).join('');
+
+      // Wire buttons
+      for(const btn of list.querySelectorAll('[data-like]')){
+        btn.onclick = async (e)=>{
+          const id = e.currentTarget.getAttribute('data-like');
+          await likeRecipe(id);
+          await loadAll();
+        };
+      }
+      for(const item of list.querySelectorAll('[data-open]')){
+        item.onclick = (e)=> openDetail(e.currentTarget.getAttribute('data-open'));
+      }
+    }
+
+    function esc(s){ return (s||'').replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+    function cardHTML(r){
+      const pics = (r.pictures||[]).slice(0,3);
+      return `
+      <div class="card">
+        <div class="row">
+          <div style="font-weight:700">${esc(r.title)}</div>
+          <div class="badge">${esc(r.type||'Other')}</div>
+        </div>
+        ${pics.length? `<div class="thumbs">${pics.map(u=>`<img loading="lazy" src="${esc(u)}">`).join('')}</div>`: ''}
+        <div class="muted">${esc(r.description||'')}</div>
+        <div class="row">
+          <div class="muted">⏱️ ${esc(r.time||'')}</div>
+          <div class="likes"><button class="ghost" data-like="${r.id}">❤️ Like</button><span>${r.likes||0}</span></div>
+        </div>
+        <button class="ghost" data-open="${r.id}">View details →</button>
+      </div>`;
+    }
+
+    // Detail view
+    function openDetail(id){
+      const r = RECIPES.find(x=>x.id===id); if(!r) return;
+      const box = document.querySelector('#detailModal .sheet');
+      box.innerHTML = `
+        <div class="row"><h2 style="margin:0">${esc(r.title)}</h2><div class="badge">${esc(r.type||'Other')}</div></div>
+        ${ (r.pictures||[]).length? `<img src="${esc(r.pictures[0])}" alt="">`: '' }
+        <p class="muted">${esc(r.description||'')}</p>
+        <div class="row" style="margin:8px 0 14px"><div class="badge">⏱️ ${esc(r.time||'')}</div><div class="badge">❤️ ${r.likes||0} likes</div></div>
+        <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px">
+          <div>
+            <div class="k">Ingredients</div>
+            <ul>${(r.ingredients||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul>
+          </div>
+          <div>
+            <div class="k">Instructions</div>
+            <ol>${(r.instructions||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ol>
+          </div>
+        </div>
+        ${ (r.pictures||[]).length>1? `<div style="margin-top:12px"><div class="k">More photos</div><div class="thumbs">${r.pictures.slice(1).map(u=>`<img src="${esc(u)}">`).join('')}</div></div>`: '' }
+        <div class="row" style="margin-top:14px"><button id="closeDetail">Close</button></div>
+      `;
+      document.getElementById('closeDetail').onclick = ()=> closeModal('detailModal');
+      openModal('detailModal');
+    }
+
+    // Wire UI
+    document.getElementById('addBtn').onclick = ()=> openModal('addModal');
+    document.getElementById('cancelAdd').onclick = ()=> closeModal('addModal');
+    document.getElementById('q').oninput = renderList;
+    document.getElementById('typeSel').onchange = renderList;
+    document.getElementById('sortSel').onchange = renderList;
+    document.getElementById('refreshBtn').onclick = loadAll;
+
+    document.getElementById('addForm').onsubmit = async (e)=>{
+        e.preventDefault();
+        const msg = document.getElementById('formMsg');
+        msg.textContent = 'Uploading…';
+        const res = await addRecipeMultipart(e.target);
+        msg.textContent = res && res.ok? 'Saved!' : 'Something went wrong';
+        if(res && res.ok){ e.target.reset(); closeModal('addModal'); await loadAll(); }
+    };
+
+    // Kick off
+    loadAll();
+  </script>
+</body>
+</html>
