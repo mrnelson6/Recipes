@@ -135,7 +135,7 @@
 
   <script>
     // === Replace with your deployed Apps Script Web App URL (ends with /exec)
-    const APP_URL = 'https://script.google.com/macros/s/AKfycbzVsxiVnOmaO2zpm31IUT1k3TvEGhu3uAKWcPNodxwrOROTDZLOXRdW9F6DjLvMw0HG/exec';
+    const APP_URL = 'https://script.google.com/macros/s/AKfycbyrvddCe7RZX7ub65PRTmkvmQp4oYENRr3-ujIaZ_9F3yqE_URY4z5-cBO1l1cBXyh5/exec';
 
     // Light progress bar utility
     const bar = document.getElementById('bar');
@@ -277,26 +277,26 @@
     document.getElementById('refreshBtn').onclick = loadAll;
 
     document.getElementById('addForm').onsubmit = async (e)=>{
-    e.preventDefault();
-    const msg = document.getElementById('formMsg');
-    msg.textContent = 'Uploading…';
-    try {
-        const fdRes = await addRecipeMultipart(e.target);
-        // If addRecipeMultipart already returns parsed JSON:
-        const ok = fdRes && fdRes.ok;
-        if (!ok) {
-        msg.textContent = 'Upload failed: ' + (fdRes && fdRes.error ? fdRes.error : 'unknown error');
-        console.error('Upload error (parsed JSON):', fdRes);
-        return;
+        e.preventDefault();
+        const msg = document.getElementById('formMsg');
+        msg.textContent = 'Uploading…';
+        try {
+            const fdRes = await addRecipeMultipart(e.target);
+            // If addRecipeMultipart already returns parsed JSON:
+            const ok = fdRes && fdRes.ok;
+            if (!ok) {
+            msg.textContent = 'Upload failed: ' + (fdRes && fdRes.error ? fdRes.error : 'unknown error');
+            console.error('Upload error (parsed JSON):', fdRes);
+            return;
+            }
+            msg.textContent = 'Saved!';
+            e.target.reset();
+            closeModal('addModal');
+            await loadAll();
+        } catch (err) {
+            msg.textContent = 'Network/parse error (see console)';
+            console.error('Upload error (exception):', err);
         }
-        msg.textContent = 'Saved!';
-        e.target.reset();
-        closeModal('addModal');
-        await loadAll();
-    } catch (err) {
-        msg.textContent = 'Network/parse error (see console)';
-        console.error('Upload error (exception):', err);
-    }
     };
 
     // Kick off
