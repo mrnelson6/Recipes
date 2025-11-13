@@ -115,7 +115,7 @@
                 <textarea name="ingredients" rows="4" placeholder="Ingredients (one per line)" style="flex:1"></textarea>
                 <textarea name="instructions" rows="4" placeholder="Instructions (steps, one per line)" style="flex:1"></textarea>
             </div>
-            <input type="file" name="photos" id="photos" accept="image/*" multiple style="width:100%;margin-bottom:8px" />
+            <input type="file" name="photos" id="photos" accept="image/*" multiple onchange="logPhotos(this)" multiple style="width:100%;margin-bottom:8px" />
             <input name="pictures" placeholder="Image URL(s), comma‑separated" style="width:100%;margin-bottom:10px">
             <div class="row">
                 <div class="muted mono" id="formMsg"></div>
@@ -135,7 +135,8 @@
 
   <script>
     // === Replace with your deployed Apps Script Web App URL (ends with /exec)
-    const APP_URL = 'https://script.google.com/macros/s/AKfycbzMbgKuZS3ZMs4srWHrM9NEkrqoizMbzYEx6odrX0xY_liE7omMVMCh20QextZ0wHDO/exec';
+    const APP_URL = 'https://script.google.com/macros/s/AKfycbxI1lrwiqQnVAsKFAOScXjFMnrALRrHN68_6-4NYMgAjI_L5Ty3j-EWtduKWm3j-4FS/exec';
+    const DEBUG_URL = 'https://script.google.com/macros/s/AKfycbwxL_xQ9lRpYnHZdgM3AEU5AQ4owsJFnQJq2ot_bxFtMxyqJIul1Wf_ek8H8oFQbo0/exec';
 
     // Light progress bar utility
     const bar = document.getElementById('bar');
@@ -147,6 +148,64 @@
     // Modal helpers
     function openModal(id){ document.getElementById(id).style.display='grid'; }
     function closeModal(id){ document.getElementById(id).style.display='none'; }
+
+function fileToBase64NoPrefix(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result; // "data:image/png;base64,AAAA..."
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+    // Debug-only: send selected photo as JSON with base64 to DEBUG_URL
+    window.debugUploadPhotos = async function debugUploadPhotos() {
+    const input = document.getElementById('photos');
+    if (!input) {
+        console.error('No #photos input found on the page.');
+        return;
+    }
+    if (!input.files || input.files.length === 0) {
+        console.warn('No files selected in #photos. Pick a file in the UI first.');
+        return;
+    }
+
+    const file = input.files[0];
+    console.log('Preparing to upload (JSON/base64):', file.name, file.type, file.size, 'bytes');
+
+    const base64 = await fileToBase64NoPrefix(file);
+
+    const payload = {
+        action: 'debugBase64',
+        images: [{
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        base64: base64
+        }],
+        hello: 'world'
+    };
+
+    console.log('Sending payload to DEBUG_URL:', payload);
+
+    const resp = await fetch(DEBUG_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    const text = await resp.text();
+    console.log('Raw response:', text);
+    try {
+        const json = JSON.parse(text);
+        console.log('Parsed JSON:', json);
+    } catch {
+        console.warn('Response was not JSON.');
+    }
+    };
 
     // Fetch all
     async function loadAll(){
@@ -160,11 +219,76 @@
       setBusy(false);
     }
 
+    function logPhotos(input) {
+        console.group('📸 Selected files');
+        for (const f of input.files) console.log(f.name, f.type, f.size + ' bytes');
+        console.groupEnd();
+    }
+
+    function debugFormData(fd) {
+        console.group('🚀 FormData contents');
+        for (const [k, v] of fd.entries()) {
+            if (v instanceof File) {
+            console.log(k, '(File)', v.name, v.type, v.size + ' bytes');
+            } else {
+            console.log(k, '=', v);
+            }
+        }
+        console.groupEnd();
+    }
+
+    async function fileToBase64(file) {
+  const buf = await file.arrayBuffer();
+  const bin = String.fromCharCode(...new Uint8Array(buf));
+  return btoa(bin); // base64
+}
+
+async function addRecipeJSON(formEl){
+  const f = new FormData(formEl);
+  const files = formEl.querySelector('#photos')?.files || [];
+
+  const images = [];
+  for (const file of files) {
+    images.push({
+      name: file.name,
+      type: file.type || 'application/octet-stream',
+      base64: await fileToBase64(file)
+    });
+  }
+
+  const payload = {
+    action: 'add',
+    recipe: {
+      title: (f.get('title')||'').toString(),
+      type: (f.get('type')||'').toString(),
+      description: (f.get('description')||'').toString(),
+      time: (f.get('time')||'').toString(),
+      ingredients: (f.get('ingredients')||'').toString(),
+      instructions: (f.get('instructions')||'').toString(),
+      pictures: (f.get('pictures')||'').toString() // comma-separated URLs (optional)
+    },
+    images // array of {name,type,base64}
+  };
+
+  const resp = await fetch(APP_URL, {
+    method: 'POST',
+    // IMPORTANT: explicitly set JSON so Apps Script reads e.postData.contents
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const text = await resp.text();
+  try { return JSON.parse(text); }
+  catch { console.error('Server returned non-JSON:', text); throw new Error('Non-JSON'); }
+}
+
     async function addRecipeMultipart(formEl){
         const fd = new FormData(formEl);     // includes all fields (and files)
-        fd.append('action', 'add');          // required for server switch
-
-        const resp = await fetch(APP_URL, { method:'POST', body: fd });
+        debugFormData(fd)
+        console.time('Upload');
+        const resp = await fetch(APP_URL+ '?action=add', { method:'POST', body: fd });
+        console.timeEnd('Upload');
+        console.log('Response status', resp.status, resp.statusText);
         const text = await resp.text();
         try { return JSON.parse(text); }
         catch { console.error('Server returned non-JSON:', text); throw new Error('Non-JSON response'); }
@@ -267,21 +391,16 @@
         const msg = document.getElementById('formMsg');
         msg.textContent = 'Uploading…';
         try {
-            const fdRes = await addRecipeMultipart(e.target);
-            // If addRecipeMultipart already returns parsed JSON:
-            const ok = fdRes && fdRes.ok;
-            if (!ok) {
-            msg.textContent = 'Upload failed: ' + (fdRes && fdRes.error ? fdRes.error : 'unknown error');
-            console.error('Upload error (parsed JSON):', fdRes);
-            return;
-            }
-            msg.textContent = 'Saved!';
-            e.target.reset();
-            closeModal('addModal');
-            await loadAll();
+            // 🔁 CHANGE THIS:
+            // const res = await addRecipeJSON(e.target);
+            // TO THIS:
+            const res = await addRecipeMultipart(e.target);
+
+            console.log('Server JSON:', res);
+            msg.textContent = res?.ok ? 'Saved!' : ('Upload failed: ' + (res?.error || 'unknown'));
+            if (res?.ok) { e.target.reset(); closeModal('addModal'); await loadAll(); }
         } catch (err) {
-            msg.textContent = 'Network/parse error (see console)';
-            console.error('Upload error (exception):', err);
+            msg.textContent = 'Network/parse error'; console.error(err);
         }
     };
 
