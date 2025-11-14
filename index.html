@@ -136,7 +136,7 @@
   <script>
     // === Replace with your deployed Apps Script Web App URL (ends with /exec)
     const APP_URL = 'https://script.google.com/macros/s/AKfycbxI1lrwiqQnVAsKFAOScXjFMnrALRrHN68_6-4NYMgAjI_L5Ty3j-EWtduKWm3j-4FS/exec';
-    const DEBUG_URL = 'https://script.google.com/macros/s/AKfycbwxL_xQ9lRpYnHZdgM3AEU5AQ4owsJFnQJq2ot_bxFtMxyqJIul1Wf_ek8H8oFQbo0/exec';
+    const DEBUG_URL = 'https://script.google.com/macros/s/AKfycbyO8UjrgNnQ4Cm52InyjuX3JxRI_-PreVd0AdJ-1XITMQAUETvjJG9zmxHc8DUGXZ6R/exec';
 
     // Light progress bar utility
     const bar = document.getElementById('bar');
@@ -164,47 +164,51 @@ function fileToBase64NoPrefix(file) {
 
     // Debug-only: send selected photo as JSON with base64 to DEBUG_URL
     window.debugUploadPhotos = async function debugUploadPhotos() {
-    const input = document.getElementById('photos');
-    if (!input) {
-        console.error('No #photos input found on the page.');
-        return;
-    }
-    if (!input.files || input.files.length === 0) {
-        console.warn('No files selected in #photos. Pick a file in the UI first.');
-        return;
-    }
+        const input = document.getElementById('photos');
+        if (!input) {
+            console.error('No #photos input found on the page.');
+            return;
+        }
+        if (!input.files || input.files.length === 0) {
+            console.warn('No files selected in #photos. Pick a file in the UI first.');
+            return;
+        }
 
-    const file = input.files[0];
-    console.log('Preparing to upload (JSON/base64):', file.name, file.type, file.size, 'bytes');
+        const file = input.files[0];
+        console.log('Preparing to upload (JSON/base64):', file.name, file.type, file.size, 'bytes');
 
-    const base64 = await fileToBase64NoPrefix(file);
+        const base64 = await fileToBase64NoPrefix(file);
 
-    const payload = {
-        action: 'debugBase64',
-        images: [{
-        name: file.name,
-        type: file.type || 'application/octet-stream',
-        base64: base64
-        }],
-        hello: 'world'
-    };
+        const payload = {
+            action: 'debugBase64',
+            images: [{
+            name: file.name,
+            type: file.type || 'application/octet-stream',
+            base64: base64
+            }],
+            hello: 'world'
+        };
 
-    console.log('Sending payload to DEBUG_URL:', payload);
+        console.log('Sending payload to DEBUG_URL:', payload);
 
-    const resp = await fetch(DEBUG_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
+        const resp = await fetch(DEBUG_URL, {
+            method: 'POST',
+            redirect: 'follow', // important for Apps Script redirects
+            headers: {
+            // Text/plain is a "simple" content type -> no CORS preflight
+            'Content-Type': 'text/plain;charset=utf-8'
+            },
+            body: JSON.stringify(payload)  // still JSON, just labeled as text
+        });
 
-    const text = await resp.text();
-    console.log('Raw response:', text);
-    try {
-        const json = JSON.parse(text);
-        console.log('Parsed JSON:', json);
-    } catch {
-        console.warn('Response was not JSON.');
-    }
+        const text = await resp.text();
+        console.log('Raw response:', text);
+        try {
+            const json = JSON.parse(text);
+            console.log('Parsed JSON:', json);
+        } catch {
+            console.warn('Response was not JSON.');
+        }
     };
 
     // Fetch all
