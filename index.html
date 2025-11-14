@@ -133,10 +133,9 @@
     <div class="sheet detail"></div>
   </div>
 
-  <script>
-    // === Replace with your deployed Apps Script Web App URL (ends with /exec)
-    const APP_URL = 'https://script.google.com/macros/s/AKfycbxI1lrwiqQnVAsKFAOScXjFMnrALRrHN68_6-4NYMgAjI_L5Ty3j-EWtduKWm3j-4FS/exec';
-    const DEBUG_URL = 'https://script.google.com/macros/s/AKfycbyO8UjrgNnQ4Cm52InyjuX3JxRI_-PreVd0AdJ-1XITMQAUETvjJG9zmxHc8DUGXZ6R/exec';
+    <script>
+    // === Your deployed Apps Script Web App URL (ends with /exec)
+    const APP_URL = 'https://script.google.com/macros/s/AKfycbyyM7_1eo1X-G4BnPfLKl1bM7_Fx-YlEL5GRRem3otwwNhdNxo6peE9djZKi4gk-RwM/exec';
 
     // Light progress bar utility
     const bar = document.getElementById('bar');
@@ -149,237 +148,248 @@
     function openModal(id){ document.getElementById(id).style.display='grid'; }
     function closeModal(id){ document.getElementById(id).style.display='none'; }
 
-function fileToBase64NoPrefix(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result; // "data:image/png;base64,AAAA..."
-      const comma = result.indexOf(',');
-      resolve(comma >= 0 ? result.slice(comma + 1) : result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-    // Debug-only: send selected photo as JSON with base64 to DEBUG_URL
-    window.debugUploadPhotos = async function debugUploadPhotos() {
-        const input = document.getElementById('photos');
-        if (!input) {
-            console.error('No #photos input found on the page.');
-            return;
-        }
-        if (!input.files || input.files.length === 0) {
-            console.warn('No files selected in #photos. Pick a file in the UI first.');
-            return;
-        }
-
-        const file = input.files[0];
-        console.log('Preparing to upload (JSON/base64):', file.name, file.type, file.size, 'bytes');
-
-        const base64 = await fileToBase64NoPrefix(file);
-
-        const payload = {
-            action: 'debugBase64',
-            images: [{
-            name: file.name,
-            type: file.type || 'application/octet-stream',
-            base64: base64
-            }],
-            hello: 'world'
-        };
-
-        console.log('Sending payload to DEBUG_URL:', payload);
-
-        const resp = await fetch(DEBUG_URL, {
-            method: 'POST',
-            redirect: 'follow', // important for Apps Script redirects
-            headers: {
-            // Text/plain is a "simple" content type -> no CORS preflight
-            'Content-Type': 'text/plain;charset=utf-8'
-            },
-            body: JSON.stringify(payload)  // still JSON, just labeled as text
-        });
-
-        const text = await resp.text();
-        console.log('Raw response:', text);
-        try {
-            const json = JSON.parse(text);
-            console.log('Parsed JSON:', json);
-        } catch {
-            console.warn('Response was not JSON.');
-        }
-    };
-
-    // Fetch all
-    async function loadAll(){
-      setBusy(true);
-      try{
-        const res = await fetch(APP_URL + '?action=list');
-        const data = await res.json();
-        RECIPES = (data.rows||[]);
-        renderList();
-      }catch(e){ console.error(e); }
-      setBusy(false);
-    }
-
     function logPhotos(input) {
         console.group('📸 Selected files');
         for (const f of input.files) console.log(f.name, f.type, f.size + ' bytes');
         console.groupEnd();
     }
 
-    function debugFormData(fd) {
-        console.group('🚀 FormData contents');
-        for (const [k, v] of fd.entries()) {
-            if (v instanceof File) {
-            console.log(k, '(File)', v.name, v.type, v.size + ' bytes');
-            } else {
-            console.log(k, '=', v);
-            }
+    // Helper: File -> base64 (no prefix)
+    async function fileToBase64(file) {
+        const buf = await file.arrayBuffer();
+        let bin = '';
+        const bytes = new Uint8Array(buf);
+        for (let i = 0; i < bytes.length; i++) {
+        bin += String.fromCharCode(bytes[i]);
         }
-        console.groupEnd();
+        return btoa(bin);
     }
 
-    async function fileToBase64(file) {
-  const buf = await file.arrayBuffer();
-  const bin = String.fromCharCode(...new Uint8Array(buf));
-  return btoa(bin); // base64
-}
+    // Add recipe via JSON (with base64 images)
+    async function addRecipeJSON(formEl){
+        const f = new FormData(formEl);
+        const files = formEl.querySelector('#photos')?.files || [];
 
-async function addRecipeJSON(formEl){
-  const f = new FormData(formEl);
-  const files = formEl.querySelector('#photos')?.files || [];
+        const images = [];
+        for (const file of files) {
+        images.push({
+            name: file.name,
+            type: file.type || 'application/octet-stream',
+            base64: await fileToBase64(file)
+        });
+        }
 
-  const images = [];
-  for (const file of files) {
-    images.push({
-      name: file.name,
-      type: file.type || 'application/octet-stream',
-      base64: await fileToBase64(file)
-    });
-  }
+        const payload = {
+        action: 'add',
+        recipe: {
+            title: (f.get('title')||'').toString(),
+            type: (f.get('type')||'').toString(),
+            description: (f.get('description')||'').toString(),
+            time: (f.get('time')||'').toString(),
+            ingredients: (f.get('ingredients')||'').toString(),
+            instructions: (f.get('instructions')||'').toString(),
+            pictures: (f.get('pictures')||'').toString() // comma-separated URLs (optional)
+        },
+        images // array of {name,type,base64}
+        };
 
-  const payload = {
-    action: 'add',
-    recipe: {
-      title: (f.get('title')||'').toString(),
-      type: (f.get('type')||'').toString(),
-      description: (f.get('description')||'').toString(),
-      time: (f.get('time')||'').toString(),
-      ingredients: (f.get('ingredients')||'').toString(),
-      instructions: (f.get('instructions')||'').toString(),
-      pictures: (f.get('pictures')||'').toString() // comma-separated URLs (optional)
-    },
-    images // array of {name,type,base64}
-  };
+        // Send as plain text (JSON string) so no CORS preflight
+        const resp = await fetch(APP_URL, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+        });
 
-  const resp = await fetch(APP_URL, {
-    method: 'POST',
-    // IMPORTANT: explicitly set JSON so Apps Script reads e.postData.contents
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-
-  const text = await resp.text();
-  try { return JSON.parse(text); }
-  catch { console.error('Server returned non-JSON:', text); throw new Error('Non-JSON'); }
-}
-
-    async function addRecipeMultipart(formEl){
-        const fd = new FormData(formEl);     // includes all fields (and files)
-        debugFormData(fd)
-        console.time('Upload');
-        const resp = await fetch(APP_URL+ '?action=add', { method:'POST', body: fd });
-        console.timeEnd('Upload');
-        console.log('Response status', resp.status, resp.statusText);
         const text = await resp.text();
         try { return JSON.parse(text); }
-        catch { console.error('Server returned non-JSON:', text); throw new Error('Non-JSON response'); }
+        catch {
+        console.error('Server returned non-JSON:', text);
+        throw new Error('Non-JSON');
+        }
     }
 
-    // Like
+    // Fetch all recipes
+    async function loadAll(){
+        setBusy(true);
+        try{
+        const res = await fetch(APP_URL + '?action=list');
+        const data = await res.json();
+        RECIPES = data.rows || [];
+        renderList();
+        }catch(e){
+        console.error(e);
+        }
+        setBusy(false);
+    }
+
+    // Like a recipe
     async function likeRecipe(id){
-      const likedKey = 'liked_'+id;
-      if (localStorage.getItem(likedKey)) return; // very light client guard
-      const res = await fetch(APP_URL, { method:'POST', body: JSON.stringify({ action:'like', id }) });
-      try { const j = await res.json(); if(j.ok){ localStorage.setItem(likedKey,'1'); } return j; } catch { return { ok:true }; }
+        const likedKey = 'liked_'+id;
+        if (localStorage.getItem(likedKey)) return; // simple client guard
+        const res = await fetch(APP_URL, {
+        method:'POST',
+        body: JSON.stringify({ action:'like', id })
+        });
+        try {
+        const j = await res.json();
+        if (j.ok) localStorage.setItem(likedKey, '1');
+        return j;
+        } catch {
+        return { ok:true };
+        }
     }
 
     // Render list with filters/search/sort
     function renderList(){
-      const q = document.getElementById('q').value.toLowerCase().trim();
-      const t = document.getElementById('typeSel').value;
-      const s = document.getElementById('sortSel').value;
+        const q = document.getElementById('q').value.toLowerCase().trim();
+        const t = document.getElementById('typeSel').value;
+        const s = document.getElementById('sortSel').value;
 
-      let rows = RECIPES.slice();
-      if(t) rows = rows.filter(r => (r.type||'') === t);
-      if(q) rows = rows.filter(r => (r.title||'').toLowerCase().includes(q) || (r.ingredients||[]).join('\n').toLowerCase().includes(q));
+        let rows = RECIPES.slice();
+        if (t) rows = rows.filter(r => (r.type||'') === t);
+        if (q) {
+        rows = rows.filter(r =>
+            (r.title||'').toLowerCase().includes(q) ||
+            (r.ingredients||[]).join('\n').toLowerCase().includes(q)
+        );
+        }
 
-      if(s==='likes') rows.sort((a,b)=>(b.likes||0)-(a.likes||0));
-      if(s==='new')   rows.sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp));
-      if(s==='az')    rows.sort((a,b)=> (a.title||'').localeCompare(b.title||''));
+        if (s === 'likes') rows.sort((a,b)=>(b.likes||0)-(a.likes||0));
+        if (s === 'new')   rows.sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp));
+        if (s === 'az')    rows.sort((a,b)=> (a.title||'').localeCompare(b.title||''));
 
-      const list = document.getElementById('list');
-      list.innerHTML = rows.map(r => cardHTML(r)).join('');
+        const list = document.getElementById('list');
+        list.innerHTML = rows.map(r => cardHTML(r)).join('');
 
-      // Wire buttons
-      for(const btn of list.querySelectorAll('[data-like]')){
+        // Wire buttons
+        for(const btn of list.querySelectorAll('[data-like]')){
         btn.onclick = async (e)=>{
-          const id = e.currentTarget.getAttribute('data-like');
-          await likeRecipe(id);
-          await loadAll();
+            const id = e.currentTarget.getAttribute('data-like');
+            await likeRecipe(id);
+            await loadAll();
         };
-      }
-      for(const item of list.querySelectorAll('[data-open]')){
+        }
+        for(const item of list.querySelectorAll('[data-open]')){
         item.onclick = (e)=> openDetail(e.currentTarget.getAttribute('data-open'));
-      }
+        }
     }
 
-    function esc(s){ return (s||'').replace(/[&<>]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+    function esc(s){
+        if (s === null || s === undefined) return '';
+        return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+    }
+
+    // Try to extract a Google Drive file ID from various URL shapes
+    function extractDriveId(raw) {
+    if (!raw) return '';
+
+    const s = String(raw).trim();
+
+    // If it looks like just an ID (no http:// and no slash), assume it already is
+    if (!/^https?:\/\//i.test(s) && !s.includes('/')) {
+        return s;
+    }
+
+    // Try using URL API first
+    try {
+        const u = new URL(s);
+        // ?id=XYZ
+        const byQuery = u.searchParams.get('id');
+        if (byQuery) return byQuery;
+
+        // /d/XYZ/...
+        const m = u.pathname.match(/\/d\/([^/]+)/);
+        if (m && m[1]) return m[1];
+    } catch (e) {
+        // Fallback: regex on raw string
+        const m = s.match(/[?&]id=([^&]+)/);
+        if (m && m[1]) return m[1];
+    }
+
+    return '';
+    }
+
+    // Build a thumbnail URL from any Drive-style URL or ID
+    function driveThumbUrl(raw) {
+        const id = extractDriveId(raw);
+        if (!id) return raw || ''; // fallback to original
+        return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w1000`;
+    }
 
     function cardHTML(r){
-      const pics = (r.pictures||[]).slice(0,3);
-      return `
-      <div class="card">
-        <div class="row">
-          <div style="font-weight:700">${esc(r.title)}</div>
-          <div class="badge">${esc(r.type||'Other')}</div>
-        </div>
-        ${pics.length? `<div class="thumbs">${pics.map(u=>`<img loading="lazy" src="${esc(u)}">`).join('')}</div>`: ''}
-        <div class="muted">${esc(r.description||'')}</div>
-        <div class="row">
-          <div class="muted">⏱️ ${esc(r.time||'')}</div>
-          <div class="likes"><button class="ghost" data-like="${r.id}">❤️ Like</button><span>${r.likes||0}</span></div>
-        </div>
-        <button class="ghost" data-open="${r.id}">View details →</button>
-      </div>`;
+        const pics = (r.pictures||[]).slice(0,3).map(u => driveThumbUrl(u));
+        return `
+        <div class="card">
+            <div class="row">
+            <div style="font-weight:700">${esc(r.title)}</div>
+            <div class="badge">${esc(r.type||'Other')}</div>
+            </div>
+            ${pics.length ? `<div class="thumbs">${pics.map(u=>`<img loading="lazy" src="${esc(u)}">`).join('')}</div>` : ''}
+            <div class="muted">${esc(r.description||'')}</div>
+            <div class="row">
+            <div class="muted">⏱️ ${esc(r.time||'')}</div>
+            <div class="likes">
+                <button class="ghost" data-like="${r.id}">❤️ Like</button>
+                <span>${r.likes||0}</span>
+            </div>
+            </div>
+            <button class="ghost" data-open="${r.id}">View details →</button>
+        </div>`;
     }
 
-    // Detail view
     function openDetail(id){
-      const r = RECIPES.find(x=>x.id===id); if(!r) return;
-      const box = document.querySelector('#detailModal .sheet');
-      box.innerHTML = `
-        <div class="row"><h2 style="margin:0">${esc(r.title)}</h2><div class="badge">${esc(r.type||'Other')}</div></div>
-        ${ (r.pictures||[]).length? `<img src="${esc(r.pictures[0])}" alt="">`: '' }
+    // Be tolerant about types (number vs string)
+    const r = RECIPES.find(x => String(x.id) === String(id));
+    if (!r) {
+        console.warn('openDetail: recipe not found for id', id, 'available ids:', RECIPES.map(x => x.id));
+        return;
+    }
+
+    const box = document.querySelector('#detailModal .sheet');
+    if (!box) {
+        console.error('openDetail: #detailModal .sheet not found in DOM');
+        return;
+    }
+
+    const mainPic = (r.pictures && r.pictures.length)
+        ? driveThumbUrl(r.pictures[0])
+        : '';
+    const morePics = (r.pictures || []).slice(1).map(u => driveThumbUrl(u));
+
+    box.innerHTML = `
+        <div class="row">
+        <h2 style="margin:0">${esc(r.title)}</h2>
+        <div class="badge">${esc(r.type||'Other')}</div>
+        </div>
+        ${mainPic ? `<img src="${esc(mainPic)}" alt="">` : ''}
         <p class="muted">${esc(r.description||'')}</p>
-        <div class="row" style="margin:8px 0 14px"><div class="badge">⏱️ ${esc(r.time||'')}</div><div class="badge">❤️ ${r.likes||0} likes</div></div>
+        <div class="row" style="margin:8px 0 14px">
+        <div class="badge">⏱️ ${esc(r.time||'')}</div>
+        <div class="badge">❤️ ${r.likes||0} likes</div>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px">
-          <div>
+        <div>
             <div class="k">Ingredients</div>
             <ul>${(r.ingredients||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul>
-          </div>
-          <div>
+        </div>
+        <div>
             <div class="k">Instructions</div>
             <ol>${(r.instructions||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ol>
-          </div>
         </div>
-        ${ (r.pictures||[]).length>1? `<div style="margin-top:12px"><div class="k">More photos</div><div class="thumbs">${r.pictures.slice(1).map(u=>`<img src="${esc(u)}">`).join('')}</div></div>`: '' }
-        <div class="row" style="margin-top:14px"><button id="closeDetail">Close</button></div>
-      `;
-      document.getElementById('closeDetail').onclick = ()=> closeModal('detailModal');
-      openModal('detailModal');
+        </div>
+        ${morePics.length ? `
+        <div style="margin-top:12px">
+            <div class="k">More photos</div>
+            <div class="thumbs">
+            ${morePics.map(u=>`<img src="${esc(u)}">`).join('')}
+            </div>
+        </div>` : ''}
+        <div class="row" style="margin-top:14px">
+        <button id="closeDetail">Close</button>
+        </div>
+    `;
+
+    document.getElementById('closeDetail').onclick = () => closeModal('detailModal');
+    openModal('detailModal');
     }
 
     // Wire UI
@@ -395,21 +405,22 @@ async function addRecipeJSON(formEl){
         const msg = document.getElementById('formMsg');
         msg.textContent = 'Uploading…';
         try {
-            // 🔁 CHANGE THIS:
-            // const res = await addRecipeJSON(e.target);
-            // TO THIS:
-            const res = await addRecipeMultipart(e.target);
-
-            console.log('Server JSON:', res);
-            msg.textContent = res?.ok ? 'Saved!' : ('Upload failed: ' + (res?.error || 'unknown'));
-            if (res?.ok) { e.target.reset(); closeModal('addModal'); await loadAll(); }
+        const res = await addRecipeJSON(e.target);   // ✅ use JSON/base64 version
+        console.log('Server JSON:', res);
+        msg.textContent = res?.ok ? 'Saved!' : ('Upload failed: ' + (res?.error || 'unknown'));
+        if (res?.ok) {
+            e.target.reset();
+            closeModal('addModal');
+            await loadAll();
+        }
         } catch (err) {
-            msg.textContent = 'Network/parse error'; console.error(err);
+        msg.textContent = 'Network/parse error';
+        console.error(err);
         }
     };
 
     // Kick off
     loadAll();
-  </script>
+    </script>
 </body>
 </html>

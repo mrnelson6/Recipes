@@ -1,7 +1,7 @@
 // ====== CONFIG ======
 const SHEET_NAME = 'Recipes';
 // Paste your Drive folder ID here (create a folder, copy its ID from the URL)
-const FOLDER_ID = 'PUT_DRIVE_FOLDER_ID_HERE';
+const FOLDER_ID = '1G9rjYFXsVZzYeMZ6TCTmn3o_cXSdTIDm';
 
 // ---------- Utilities ----------
 function json(o){
@@ -36,8 +36,18 @@ function rowToObj(r){
   };
 }
 
+function doGet(e) {
+  Logger.log('--- doGet hit ---');
+  Logger.log('Timestamp: %s', new Date());
+  Logger.log('Query params: %s', JSON.stringify(e && e.parameter));
+
+  return ContentService
+    .createTextOutput('Hello from test-doGet. Check the logs in Apps Script.')
+    .setMimeType(ContentService.MimeType.TEXT);
+}
+
 // ---------- GET handler ----------
-function doGet(e){
+/*function doGet(e){
   e = e || { parameter:{} };
   const action = (e.parameter.action || 'list').toLowerCase();
   const sh = getSheet();
@@ -61,76 +71,118 @@ function doGet(e){
   const values = sh.getDataRange().getValues();
   const rows = values.slice(1).map(rowToObj);
   return json({ ok:true, rows });
-}
+}*/
 
-// ---------- POST handler (multipart or JSON) ----------
-function doPost(e){
-  e = e || { parameter:{}, postData:null, files:null };
-  try {
-    // If JSON was sent, parse it; for multipart, e.parameter contains fields
-    const body   = (e.postData && e.postData.type && e.postData.type.indexOf('application/json') === 0)
-                 ? JSON.parse(e.postData.contents) : {};
-    const action = String(body.action || (e.parameter && e.parameter.action) || '').toLowerCase();
 
-    if (action === 'add') {
-      const r = body.recipe || {};
-      const title = r.title || e.parameter.title || '';
-      const type  = r.type  || e.parameter.type  || '';
-      const description = r.description || e.parameter.description || '';
-      const time  = r.time || e.parameter.time || '';
+function doPost(e) {
+  const ss = SpreadsheetApp.getActive();
+  const sh = ss.getSheetByName('WebAppLog');
+  const timestamp = new Date();
 
-      let ingredients  = r.ingredients  || e.parameter.ingredients  || [];
-      let instructions = r.instructions || e.parameter.instructions || [];
-      if (typeof ingredients === 'string')  ingredients  = ingredients.split(/\n+/).map(s=>s.trim()).filter(Boolean);
-      if (typeof instructions === 'string') instructions = instructions.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  let postType = '';
+  let raw = '';
+  let body = {};
 
-      // URLs pasted by user (comma-separated or array)
-      let pictureUrls = r.pictures || e.parameter.pictures || [];
-      if (typeof pictureUrls === 'string') pictureUrls = pictureUrls.split(/,\s*/).map(s=>s.trim()).filter(Boolean);
+  // -----------------------------
+  // 1. Read POST body (text/plain)
+  // -----------------------------
+  if (e && e.postData) {
+    postType = e.postData.type || '';
+    raw = e.postData.contents || '';
+    Logger.log('postData.type: %s', postType);
 
-      // Files uploaded via multipart -> e.files
-      const uploaded = saveUploadedFiles(e);   // returns array of Drive view URLs
-      const allPics = pictureUrls.concat(uploaded);
-
-      // Append to sheet
-      const id = Utilities.getUuid();
-      const sh = getSheet();
-      sh.appendRow([
-        id, new Date(),
-        String(title).slice(0,160),
-        String(type).slice(0,60),
-        String(description).slice(0,2000),
-        String(time).slice(0,60),
-        JSON.stringify(ingredients),
-        JSON.stringify(instructions),
-        JSON.stringify(allPics),
-        0
-      ]);
-
-      return json({ ok:true, id, pictures: allPics, uploadedCount: uploaded.length });
+    // Try to parse JSON no matter what (we sent as text/plain)
+    try {
+      body = JSON.parse(raw);
+    } catch (err) {
+      Logger.log('JSON parse error: %s', err);
+      body = {};
     }
-
-    if (action === 'like') {
-      const id = String(body.id || (e.parameter && e.parameter.id) || '');
-      if (!id) return json({ ok:false, error:'missing_id' });
-
-      const sh = getSheet();
-      const values = sh.getDataRange().getValues();
-      const rows = values.slice(1);
-      const idx = rows.findIndex(r => r[0] === id);
-      if (idx < 0) return json({ ok:false, error:'not_found' });
-
-      const rowIndex = idx + 2; // header + 1
-      const likesRange = sh.getRange(rowIndex, 10); // col J
-      const cur = Number(likesRange.getValue() || 0);
-      likesRange.setValue(cur + 1);
-      return json({ ok:true, likes: cur + 1 });
-    }
-
-    return json({ ok:false, error:'unknown_action' });
-  } catch (err) {
-    return json({ ok:false, error:String(err) });
   }
+
+  const action = String(body.action || '').toLowerCase();
+  Logger.log('action: %s', action);
+
+  // For debugging, also log param keys
+  const paramKeysArr = Object.keys(e?.parameter || []);
+  Logger.log('parameter keys: %s', JSON.stringify(paramKeysArr));
+
+  // Default response
+  let result = { ok: true, note: 'no action' };
+
+  // -----------------------------------
+  // 2. Handle debugBase64 image upload
+  // -----------------------------------
+  if (action === 'debugbase64') {
+    const folder = DriveApp.getFolderById(FOLDER_ID);
+    const images = body.images || [];
+    const saved = [];
+
+    Logger.log('debugBase64: images.length = %s', images.length);
+
+    images.forEach(img => {
+      try {
+        const name = img.name || 'upload.bin';
+        const mime = img.type || 'application/octet-stream';
+        const base64 = img.base64 || '';
+
+        // Decode
+        const bytes = Utilities.base64Decode(base64);
+        const blob = Utilities.newBlob(bytes, mime, name);
+
+        // Save to Drive
+        const file = folder.createFile(blob);
+        file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+        const url = 'https://drive.google.com/uc?export=view&id=' + file.getId();
+
+        saved.push({
+          name: file.getName(),
+          mimeType: file.getMimeType(),
+          size: file.getSize(),
+          url: url
+        });
+
+        // Append to WebAppLog
+        sh.appendRow([
+          timestamp,              // A
+          postType,               // B
+          'debugBase64',          // C (action)
+          '',                     // D (fileKeys unused)
+          true,                   // E (hasFile)
+          'base64',               // F (source)
+          file.getName(),         // G
+          file.getMimeType(),     // H
+          file.getSize(),         // I
+          url                     // J (Drive URL)
+        ]);
+
+      } catch (err) {
+        Logger.log('Error saving base64 image: %s', err);
+      }
+    });
+
+    result = { ok: true, saved };
+  } 
+  else {
+    // Fallback: log the request but no file
+    sh.appendRow([
+      timestamp,
+      postType,
+      action || '(none)',
+      '',
+      false,    // no file
+      '', '', '', '', ''
+    ]);
+
+    result = { ok: true, note: 'logged (no file)' };
+  }
+
+  // -----------------------------------
+  // 3. Return JSON output
+  // -----------------------------------
+  return ContentService
+    .createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 // ---------- Drive upload from e.files ----------
