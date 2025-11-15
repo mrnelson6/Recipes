@@ -47,6 +47,11 @@
     .detail img{width:100%;max-height:360px;object-fit:cover;border-radius:12px;border:1px solid #23325e}
     .k{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
     .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+
+    button.liked {
+    color: red;
+    font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -135,7 +140,7 @@
 
     <script>
     // === Your deployed Apps Script Web App URL (ends with /exec)
-    const APP_URL = 'https://script.google.com/macros/s/AKfycbyyM7_1eo1X-G4BnPfLKl1bM7_Fx-YlEL5GRRem3otwwNhdNxo6peE9djZKi4gk-RwM/exec';
+    const APP_URL = 'https://script.google.com/macros/s/AKfycbyVNBncuLsy6BT72jYaCgrlqM55DE2yQpLOvMa1iMqLlfyr1zTZBsSmid-ovrg9dkt8/exec';
 
     // Light progress bar utility
     const bar = document.getElementById('bar');
@@ -221,21 +226,45 @@
         setBusy(false);
     }
 
-    // Like a recipe
-    async function likeRecipe(id){
-        const likedKey = 'liked_'+id;
-        if (localStorage.getItem(likedKey)) return; // simple client guard
-        const res = await fetch(APP_URL, {
-        method:'POST',
-        body: JSON.stringify({ action:'like', id })
-        });
-        try {
-        const j = await res.json();
-        if (j.ok) localStorage.setItem(likedKey, '1');
-        return j;
-        } catch {
-        return { ok:true };
+    async function likeRecipe(id) {
+    setBusy(true);
+    try {
+        const res = await fetch(APP_URL + '?action=like&id=' + encodeURIComponent(id));
+        const data = await res.json();
+        if (data && data.ok) {
+            const recipe = RECIPES.find(r => String(r.id) === String(data.id));
+        if (recipe) {
+            recipe.likes = data.likes;   // 🔑 update local state
         }
+        renderList();                  // redraw UI from RECIPES
+        } else {
+        console.error('Like failed: bad response', data);
+        }
+    } catch (err) {
+        console.error('Like failed:', err);
+    }
+    setBusy(false);
+    }
+
+    async function unlikeRecipe(id) {
+    setBusy(true);
+    try {
+        const res = await fetch(APP_URL + '?action=unlike&id=' + encodeURIComponent(id));
+        const data = await res.json();
+
+        if (data && data.ok) {
+        const recipe = RECIPES.find(r => String(r.id) === String(data.id));
+        if (recipe) {
+            recipe.likes = data.likes;   // 🔑 update local state
+        }
+        renderList();
+        } else {
+        console.error('Unlike failed: bad response', data);
+        }
+    } catch (err) {
+        console.error('Unlike failed:', err);
+    }
+    setBusy(false);
     }
 
     // Render list with filters/search/sort
@@ -260,12 +289,24 @@
         const list = document.getElementById('list');
         list.innerHTML = rows.map(r => cardHTML(r)).join('');
 
-        // Wire buttons
-        for(const btn of list.querySelectorAll('[data-like]')){
-        btn.onclick = async (e)=>{
+        for (const btn of list.querySelectorAll('[data-like]')) {
+        btn.onclick = async (e) => {
             const id = e.currentTarget.getAttribute('data-like');
+            const likedKey = `liked_${id}`;
+            const isLiked = !!localStorage.getItem(likedKey);
+
+            if (isLiked) {
+            // UNLIKE
+            localStorage.removeItem(likedKey);
+            await unlikeRecipe(id);
+            } else {
+            // LIKE
+            localStorage.setItem(likedKey, '1');
             await likeRecipe(id);
-            await loadAll();
+            }
+
+            // No need to manually tweak text/classes here:
+            // renderList() redraws everything based on RECIPES + localStorage
         };
         }
         for(const item of list.querySelectorAll('[data-open]')){
@@ -315,25 +356,42 @@
         return `https://drive.google.com/thumbnail?id=${encodeURIComponent(id)}&sz=w1000`;
     }
 
-    function cardHTML(r){
-        const pics = (r.pictures||[]).slice(0,3).map(u => driveThumbUrl(u));
+    function cardHTML(r) {
+        const pics = (r.pictures || []).slice(0, 3).map(u => driveThumbUrl(u));
+
+        // Determine like state for this card
+        const likedKey = `liked_${r.id}`;
+        const alreadyLiked = localStorage.getItem(likedKey);
+
         return `
-        <div class="card">
-            <div class="row">
-            <div style="font-weight:700">${esc(r.title)}</div>
-            <div class="badge">${esc(r.type||'Other')}</div>
-            </div>
-            ${pics.length ? `<div class="thumbs">${pics.map(u=>`<img loading="lazy" src="${esc(u)}">`).join('')}</div>` : ''}
-            <div class="muted">${esc(r.description||'')}</div>
-            <div class="row">
-            <div class="muted">⏱️ ${esc(r.time||'')}</div>
-            <div class="likes">
-                <button class="ghost" data-like="${r.id}">❤️ Like</button>
-                <span>${r.likes||0}</span>
-            </div>
-            </div>
-            <button class="ghost" data-open="${r.id}">View details →</button>
-        </div>`;
+            <div class="card">
+                <div class="row">
+                    <div style="font-weight:700">${esc(r.title)}</div>
+                    <div class="badge">${esc(r.type || 'Other')}</div>
+                </div>
+
+                ${pics.length 
+                    ? `<div class="thumbs">${pics.map(u => `<img loading="lazy" src="${esc(u)}">`).join('')}</div>` 
+                    : ''}
+
+                <div class="muted">${esc(r.description || '')}</div>
+
+                <div class="row">
+                    <div class="muted">⏱️ ${esc(r.time || '')}</div>
+
+                    <div class="likes">
+                        <button 
+                            class="${alreadyLiked ? 'liked' : 'ghost'}" 
+                            data-like="${r.id}"
+                        >
+                            ${alreadyLiked ? '💔 Unlike' : '❤️ Like'}
+                        </button>
+                        <span>${r.likes || 0}</span>
+                    </div>
+                </div>
+
+                <button class="ghost" data-open="${r.id}">View details →</button>
+            </div>`;
     }
 
     function openDetail(id){
@@ -362,7 +420,7 @@
         <h2 style="margin:0">${esc(r.title)}</h2>
         <div class="badge">${esc(r.type||'Other')}</div>
         </div>
-        ${mainPic ? `<img src="${esc(mainPic)}" alt="">` : ''}
+        ${mainPic ? `<img loading="lazy" src="${esc(mainPic)}" alt="">` : ''}
         <p class="muted">${esc(r.description||'')}</p>
         <div class="row" style="margin:8px 0 14px">
         <div class="badge">⏱️ ${esc(r.time||'')}</div>
